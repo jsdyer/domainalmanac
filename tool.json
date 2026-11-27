@@ -6,7 +6,7 @@
   "tags": ["domain names", "aftermarket", "reported sales", "TLDs", "Canada"],
   "icon": "chart-candlestick",
   "url": "/domainalmanac/",
-  "source": "https://github.com/jsdyer/domainalmanac-",
+  "source": "https://github.com/jsdyer/domainalmanac",
   "hosting": "project",
   "access": "browser",
   "data_info": {
