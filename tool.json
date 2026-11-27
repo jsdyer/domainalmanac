@@ -1,16 +1,18 @@
 {
-  "id": "coolcode-tool-template",
-  "title": "CoolCode Tool Starter",
-  "description": "A browser-only example that trims lines and removes exact duplicates.",
-  "category": "security",
-  "tags": ["text", "lines", "duplicates"],
-  "icon": "scan-search",
-  "url": "/coolcode-tool-template/",
-  "source": "https://github.com/jsdyer/coolcode-tool-template",
+  "id": "domainalmanac",
+  "title": "Domain Market Almanac",
+  "description": "Compare reported domain resale counts, prices and dollar volume by extension and time window.",
+  "category": "money",
+  "tags": ["domain names", "aftermarket", "reported sales", "TLDs", "Canada"],
+  "icon": "chart-candlestick",
+  "url": "/domainalmanac/",
+  "source": "https://github.com/jsdyer/domainalmanac-",
   "hosting": "project",
   "access": "browser",
   "data_info": {
-    "mode": "local",
-    "detail": "The browser reads the text you paste and compares its lines."
-  }
+    "mode": "snapshot",
+    "detail": "NameBio publishes aggregated reported domain aftermarket sales in US dollars for each extension.",
+    "cadence": "Daily"
+  },
+  "result_directory": { "title": "Reported domain sales by extension", "path": "records/" }
 }

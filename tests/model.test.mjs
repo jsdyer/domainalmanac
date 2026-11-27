@@ -1,21 +1,37 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanLines } from '../web/model.mjs';
-test('trims, removes blanks and preserves first-seen order', () => {
-  assert.deepEqual(cleanLines('  Halifax\nLangley\nHalifax\n\nVancouver  '), {
-    text: 'Halifax\nLangley\nVancouver', count: 3, removed: 1,
-  });
+import { normalize, selection } from '../web/model.mjs';
+const data = ['.ca', '.games', '.lol', '.art'].map((extension) => ({
+  extension,
+}));
+const defaults = { defaults: ['.ca', '.games', '.lol'], period: '1y' };
+test('defaults and shared comparisons accept every captured extension', () => {
+  assert.deepEqual(
+    selection('', data, defaults).selected.map((r) => r.extension),
+    defaults.defaults,
+  );
+  const custom = selection(
+    '?tld=ART&compare=ca&also=&period=all_retail',
+    data,
+    defaults,
+  );
+  assert.deepEqual(
+    custom.selected.map((r) => r.extension),
+    ['.art', '.ca'],
+  );
+  assert.equal(custom.period, 'all_retail');
 });
-test('supports Windows and old Mac line endings', () => {
-  assert.equal(cleanLines('a\r\nb\ra').text, 'a\nb');
+test('unknown extensions are not zero sales, duplicates are removed, windows validated', () => {
+  const s = selection(
+    'tld=ca&compare=.CA&also=unreported&period=anything',
+    data,
+    defaults,
+  );
+  assert.equal(s.period, '1y');
+  assert.deepEqual(
+    s.selected.map((r) => r.extension),
+    ['.ca'],
+  );
+  assert.equal(s.values[2], '.unreported');
+  assert.equal(normalize(' .GAMES '), '.games');
 });
-test('empty text and whitespace produce an empty result', () => {
-  assert.deepEqual(cleanLines(' \n\t'), { text: '', count: 0, removed: 0 });
-});
-test('preserves case and Unicode', () => {
-  assert.equal(cleanLines('Québec\nquébec\n東京\nQuébec').text, 'Québec\nquébec\n東京');
-});
-test('treats markup as ordinary text', () => {
-  assert.equal(cleanLines('<script>alert(1)</script>\n<script>alert(1)</script>').text, '<script>alert(1)</script>');
-});
-test('rejects non-text input', () => { assert.throws(() => cleanLines(null), TypeError); });

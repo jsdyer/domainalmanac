@@ -1,40 +1,82 @@
-import { cleanLines } from './model.mjs';
-const input = document.querySelector('#input');
-const output = document.querySelector('#output');
-const status = document.querySelector('#status');
-const copy = document.querySelector('#copy');
-function update() {
-  const result = cleanLines(input.value);
-  output.value = result.text;
-  status.textContent = result.count
-    ? `${result.count} unique ${result.count === 1 ? 'line' : 'lines'}. ${result.removed} ${result.removed === 1 ? 'duplicate' : 'duplicates'} removed.`
-    : 'Paste one item per line or restore the example.';
-  copy.disabled = result.count === 0;
-}
-input.addEventListener('input', update);
-document.querySelector('#sample').addEventListener('click', () => {
-  input.value = input.defaultValue;
-  update();
-});
-document.querySelector('#clear').addEventListener('click', () => {
-  input.value = '';
-  update();
-  input.focus();
-});
-if (navigator.clipboard && window.isSecureContext) {
-  copy.hidden = false;
-  copy.disabled = true;
-  copy.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(output.value);
-      status.textContent = 'Result copied.';
-    } catch {
-      output.focus();
-      output.select();
-      status.textContent = 'Copy was unavailable. The result is selected so you can copy it manually.';
-    }
+import { windows, number, dollars, normalize, selection } from './model.mjs';
+const $ = (id) => document.getElementById(id);
+const names = ['tld', 'compare-input', 'also'];
+const params = ['tld', 'compare', 'also'];
+const cell = (tag, value) => {
+  const e = document.createElement(tag);
+  e.textContent = value;
+  return e;
+};
+async function start() {
+  const response = await fetch('./data/market.json');
+  if (!response.ok) throw Error('The comparison could not load.');
+  const edition = await response.json();
+  const byName = new Map(edition.records.map((r) => [r.extension, r]));
+  const list = document.createDocumentFragment();
+  for (const r of edition.records)
+    list.append(new Option(r.extension, r.extension));
+  $('extensions').replaceChildren(list);
+  $('period').replaceChildren(
+    ...Object.entries(windows).map(([id, label]) => new Option(label, id)),
+  );
+  function render(q) {
+    const state = selection(q, edition.records, edition.presets);
+    names.forEach((id, i) => {
+      $(id).value = state.values[i] === '.' ? '' : state.values[i];
+    });
+    $('period').value = state.period;
+    const unknown = state.values.filter((v) => v !== '.' && !byName.has(v));
+    $('feedback').textContent = unknown.length
+      ? 'No published extension profile for ' +
+        [...new Set(unknown)].join(', ') +
+        '. Choose a listed extension.'
+      : '';
+    $('table-context').textContent =
+      windows[state.period] + ' · reported aftermarket transactions';
+    const highest = Math.max(
+      0,
+      ...state.selected.map((r) => r.periods[state.period].sale_count),
+    );
+    const rows = state.selected.map((r) => {
+      const stats = r.periods[state.period],
+        tr = document.createElement('tr');
+      const label = cell('th', '');
+      label.scope = 'row';
+      const link = cell('a', r.extension);
+      link.href = './records/' + r.slug + '/';
+      label.append(link);
+      const sample = cell('td', '');
+      const mark = cell('span', number(stats.sale_count));
+      mark.className = 'count-value';
+      mark.style.setProperty(
+        '--share',
+        (highest ? (100 * stats.sale_count) / highest : 0) + '%',
+      );
+      sample.append(mark);
+      tr.append(
+        label,
+        sample,
+        cell('td', dollars(stats.price_sum)),
+        cell('td', stats.sale_count ? dollars(stats.price_avg) : '—'),
+        cell('td', stats.sale_count ? dollars(stats.price_max) : '—'),
+      );
+      return tr;
+    });
+    $('results').replaceChildren(...rows);
+  }
+  $('controls').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const q = new URLSearchParams();
+    names.forEach((id, i) => q.set(params[i], normalize($(id).value).slice(1)));
+    q.set('period', $('period').value);
+    history.pushState(null, '', location.pathname + '?' + q);
+    render(q);
   });
+  window.addEventListener('popstate', () => render(location.search));
+  render(location.search);
+  $('controls').hidden = false;
 }
-if (input.value) update();
-// Namespace future preference storage as coolcode:<tool-id>:<key>.
-// Do not persist pasted text or uploads by default.
+start().catch(() => {
+  $('feedback').textContent =
+    'The interactive comparison could not load. Open an extension profile below to read all the published figures.';
+});

@@ -1,39 +1,126 @@
 <!doctype html>
 <html lang="en-CA">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="{{DESCRIPTION}}">
-  <title>{{TITLE}} · CoolCode</title>
-  <link rel="stylesheet" href="./style.css">
-  <script type="module" src="./app.mjs"></script>
-  {{VISIT_COUNTER}}
-</head>
-<body data-tool-id="{{TOOL_ID}}">
-  <a class="skip" href="#main">Skip to content</a>
-  <header><a href="https://coolcode.ca/">← CoolCode.ca</a><a href="{{SOURCE_URL}}">Source &amp; instructions ↗</a></header>
-  <main id="main">
-    <h1>{{TITLE}}</h1>
-    <p class="intro">{{DESCRIPTION}}</p>
-    <section aria-labelledby="example-title">
-      <h2 id="example-title">Remove duplicate lines</h2>
-      <p>Edit the city names or paste your own list, one item per line. The first copy of each line keeps its place.</p>
-      <p id="status" role="status" aria-live="polite">3 unique lines. 1 duplicate removed.</p>
-      <div class="panels">
-        <div><label for="input">Original lines</label><textarea id="input" rows="5" maxlength="100000" spellcheck="false" placeholder="Paste one item per line">Halifax
-Langley
-Halifax
-Vancouver</textarea></div>
-        <div><label for="output">Cleaned lines</label><textarea id="output" rows="5" readonly spellcheck="false">Halifax
-Langley
-Vancouver</textarea></div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Compare reported domain sale prices by extension · CoolCode</title>
+    <meta name="description" content="{{DESCRIPTION}}" />
+    <link rel="icon" href="./favicon.svg" />
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./app.mjs"></script>
+    {{VISIT_COUNTER}}
+  </head>
+  <body data-tool="domainalmanac">
+    <header class="mast">
+      <nav>
+        <a href="https://coolcode.ca/">CoolCode.ca</a>
+        <div><a href="./records/">Extension directory</a><a href="#sources">Sources</a></div>
+      </nav>
+    </header>
+    <main>
+      <div class="intro">
+        <p class="eyebrow">Money &amp; markets</p>
+        <h1>{{TITLE}}</h1>
+        <p>
+          How often do domains with a particular ending sell, and for how much? Compare transactions reported to
+          NameBio. Prices are in US dollars.
+        </p>
       </div>
-      <div class="actions"><button id="sample" type="button">Restore example</button><button id="clear" type="button">Clear</button><button id="copy" type="button" hidden>Copy result</button></div>
-      <noscript><p>This tool needs JavaScript to process your text. The source is available above.</p></noscript>
-    </section>
-    <!-- common-use-links -->
-    <aside aria-label="Privacy"><strong>Stays on your device.</strong> The browser processes your text in this tab. Reloading clears it.</aside>
-  </main>
-  <footer>Part of <a href="https://coolcode.ca/">the CoolCode collection</a>. {{ISSUE_LINK}}</footer>
-</body>
+      <section class="bench" id="compare">
+        <div class="section-head">
+          <h2>Compare extensions</h2>
+          <span class="stamp">Checked <time datetime="{{CHECKED_AT}}">{{CHECKED_AT}}</time></span>
+        </div>
+        <form id="controls" hidden>
+          <div class="inputs">
+            <label
+              >First extension<input
+                id="tld"
+                list="extensions"
+                autocomplete="off"
+                required
+                placeholder=".ca" /></label
+            ><label
+              >Compare with<input
+                id="compare-input"
+                list="extensions"
+                autocomplete="off"
+                placeholder=".games" /></label
+            ><label
+              >Third extension<input id="also" list="extensions" autocomplete="off" placeholder=".lol" /></label
+            ><label>Time window<select id="period"></select></label>
+          </div>
+          <button type="submit">Compare sales</button><datalist id="extensions"></datalist>
+        </form>
+        <p id="feedback" role="status" class="feedback"></p>
+        <p id="table-context">{{DEFAULT_PERIOD}} · reported aftermarket transactions</p>
+        <div class="table-wrap" tabindex="0" aria-label="Extension sale counts and prices">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Extension</th>
+                <th scope="col">Sales</th>
+                <th scope="col">Total USD</th>
+                <th scope="col">Average USD</th>
+                <th scope="col">Highest USD</th>
+              </tr>
+            </thead>
+            <tbody id="results">
+              {{DEFAULT_COMPARISON}}
+            </tbody>
+          </table>
+        </div>
+        <p class="small">
+          The bars compare reported sale counts within this table. Open an extension to see its other time
+          windows. An em dash means there were no recorded sales in that window.
+          <a href="./records/">Browse all {{COUNT}} extension profiles</a>.
+        </p>
+        <noscript><p>Choose an extension profile for its full table of results.</p></noscript>
+      </section>
+      <section class="receipt">
+        <div>
+          <p class="eyebrow">Documented sale</p>
+          <h2>What sold for $30 million?</h2>
+        </div>
+        <p>
+          MicroStrategy’s filing says the company completed the sale of <strong>Voice.com</strong> for US$30
+          million in cash on May 30, 2019. The company announced it on June 18.
+          <a href="https://www.sec.gov/Archives/edgar/data/1050446/000156459019026999/R19.htm"
+            >Read the SEC filing</a
+          >
+          ·
+          <a href="https://www.sec.gov/Archives/edgar/data/1050446/000119312519175320/d724928dex991.htm"
+            >Read the announcement</a
+          >.
+        </p>
+      </section>
+      <section id="sources">
+        <h2>How to read the figures</h2>
+        <p>
+          NameBio’s sample includes reported aftermarket transactions. Rolling windows overlap, so adding the
+          month to the year would count sales twice. A few large sales can move an average, particularly when the
+          sample is small.
+        </p>
+        <p>
+          CIRA reported 3,539,550 .CA domains under management at the end of its 2026 fiscal year. That registry
+          figure measures the stock of registered domains. A registrar’s renewal fee and a seller’s asking price
+          also answer different questions from the amount paid in a completed sale.
+          <a href="https://www.cira.ca/en/resources/documents/about/fiscal-year-26-annual-report-to-members/"
+            >CIRA’s FY26 report</a
+          >.
+        </p>
+        <p>
+          Sales statistics courtesy of <a href="https://namebio.com/">NameBio</a>. NameBio refreshes its free
+          TLDStats hourly. CoolCode checks daily at 07:47 UTC. Individual transactions are outside the aggregate
+          data. <a href="https://api.namebio.com/docs/">Publisher’s definitions and terms</a> ·
+          <a href="https://api.namebio.com/tldstats-download">Download the CSV from NameBio</a>.
+        </p>
+        <p>
+          For an individual website’s registration and archive history, open
+          <a href="https://coolcode.ca/domain-biography/">Website History &amp; Domain Check</a>.
+        </p>
+      </section>
+    </main>
+    <footer><a href="{{SOURCE_URL}}">Source code</a> · {{ISSUE_LINK}}</footer>
+  </body>
 </html>

@@ -6,8 +6,11 @@ import re
 
 def add_search_metadata(page, tool, *, category="UtilitiesApplication", datasets=()):
     slug = tool["id"]
-    on_coolcode = (slug != "coolcode-tool-template"
-                  and tool["source"].rstrip("/") == f"https://github.com/jsdyer/{slug}")
+    source = tool["source"].rstrip("/")
+    official_sources = {f"https://github.com/jsdyer/{slug}"}
+    if slug == "domainalmanac":
+        official_sources.add("https://github.com/jsdyer/domainalmanac-")
+    on_coolcode = slug != "coolcode-tool-template" and source in official_sources
     canonical = "https://coolcode.ca" + tool["url"] if on_coolcode else None
     title = re.search(r"<title>(.*?)</title>", page, re.S)
     if not title or page.count("</head>") != 1:

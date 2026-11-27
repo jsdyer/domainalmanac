@@ -1,19 +1,19 @@
-"""Exercise the built starter at a project subpath in Chromium."""
-from functools import partial
+"""Test the comparison, navigation, fallback and phone layout under a real project subpath."""
+
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from functools import partial
+import json
+import os
 from pathlib import Path
 import shutil
-import tempfile
-import sys
-import threading
+from tempfile import TemporaryDirectory
+from threading import Thread
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
-from build import build
 
 
-class QuietHandler(SimpleHTTPRequestHandler):
+class Quiet(SimpleHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
@@ -21,53 +21,58 @@ class QuietHandler(SimpleHTTPRequestHandler):
 def main():
     screenshots = ROOT / "browser-checks"
     screenshots.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory() as temporary:
-        shutil.copytree(ROOT / "dist", Path(temporary) / "example-tool")
-        example = Path(temporary) / "preset-fixture"
-        example.mkdir()
-        shutil.copytree(ROOT / "web", example / "web")
-        shutil.copytree(ROOT / "examples/common-pages", example / "common-pages")
-        for name in ("tool.json", "README.md"):
-            shutil.copyfile(ROOT / name, example / name)
-        build(example)
-        server = ThreadingHTTPServer(("127.0.0.1", 0), partial(QuietHandler, directory=temporary))
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+    with TemporaryDirectory() as temp:
+        shutil.copytree(ROOT / "dist", Path(temp) / "domainalmanac")
+        server = ThreadingHTTPServer(("127.0.0.1", 0), partial(Quiet, directory=temp))
+        Thread(target=server.serve_forever, daemon=True).start()
+        url = f"http://127.0.0.1:{server.server_port}/domainalmanac/"
         try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch()
-                page = browser.new_page(viewport={"width": 1280, "height": 1000})
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(executable_path=os.getenv("CHROMIUM_PATH"))
+                page = browser.new_page(viewport={"width": 1150, "height": 820})
                 errors = []
-                page.on("pageerror", lambda error: errors.append(str(error)))
-                page.goto(f"http://127.0.0.1:{server.server_port}/example-tool/")
-                assert page.locator("#input").input_value() == "Halifax\nLangley\nHalifax\nVancouver"
-                assert page.locator("#output").input_value() == "Halifax\nLangley\nVancouver"
-                assert "1 duplicate removed" in page.locator("#status").inner_text()
-                page.locator("#input").fill('<img src=x onerror="alert(1)">\n<img src=x onerror="alert(1)">')
-                assert page.locator("#output").input_value() == '<img src=x onerror="alert(1)">'
-                assert page.locator("img").count() == 0
-                page.locator("#clear").click()
-                assert page.locator("#output").input_value() == ""
-                assert "Paste one item per line" in page.locator("#status").inner_text()
-                page.locator("#sample").click()
-                assert page.locator("#output").input_value() == "Halifax\nLangley\nVancouver"
-                page.screenshot(path=str(screenshots / "desktop.png"), full_page=True)
-                page.set_viewport_size({"width": 390, "height": 844})
-                page.goto(f"http://127.0.0.1:{server.server_port}/example-tool/")
-                assert page.locator("#input").bounding_box()["y"] < 844
-                assert page.locator("#output").input_value() == "Halifax\nLangley\nVancouver"
-                assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-                page.screenshot(path=str(screenshots / "mobile.png"), full_page=True)
-                page.goto(f"http://127.0.0.1:{server.server_port}/preset-fixture/dist/remove-duplicate-cities/")
-                assert page.locator("#output").input_value() == "Vancouver\nHalifax\nCharlottetown"
-                page.locator("#input").fill("Surrey\nSurrey\nOttawa")
-                assert page.locator("#output").input_value() == "Surrey\nOttawa"
-                page.get_by_role("button", name="Restore example").click()
-                assert page.locator("#output").input_value() == "Vancouver\nHalifax\nCharlottetown"
+                page.on("pageerror", lambda e: errors.append(str(e)))
+                page.goto(url)
+                page.locator("#controls").wait_for()
+                assert page.locator("#results tr").count() == 3
+                page.get_by_label("First extension", exact=True).fill(".com")
+                page.get_by_label("Third extension", exact=True).fill("")
+                page.locator("#period").select_option("3m")
+                page.get_by_role("button", name="Compare sales").click()
+                assert "tld=com" in page.url and "period=3m" in page.url
+                assert page.locator("#results tr").count() == 2
+                page.reload()
+                page.locator("#controls").wait_for()
+                assert (
+                    page.locator("#tld").input_value() == ".com"
+                    and page.locator("#period").input_value() == "3m"
+                )
+                page.get_by_role("link", name=".com", exact=True).click()
+                assert page.locator("h1").text_content() == ".com domain sales"
+                page.get_by_role("link", name="Compare .com with another extension").click()
+                page.locator("#controls").wait_for()
+                assert page.locator("#tld").input_value() == ".com"
+                page.locator("#also").fill(".no-such-extension-example")
+                page.get_by_role("button", name="Compare sales").click()
+                assert "No published extension" in page.locator("#feedback").text_content()
+                page.goto(url)
+                page.locator("#controls").wait_for()
+                page.screenshot(path=str(screenshots / "desktop.png"))
+                page.set_viewport_size({"width": 360, "height": 780})
+                assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+                page.screenshot(path=str(screenshots / "mobile.png"))
+                off = browser.new_context(java_script_enabled=False, viewport={"width": 360, "height": 780})
+                static = off.new_page()
+                static.goto(url)
+                assert static.locator("#results tr").count() == 3
+                static.get_by_role("link", name=".ca", exact=True).click()
+                assert static.locator("h1").text_content() == ".ca domain sales"
+                assert static.locator("tbody tr").count() == 10
                 assert not errors, errors
                 browser.close()
-            print("Browser checks passed: project subpath, sample, clear, safe text and mobile layout")
         finally:
             server.shutdown()
+    print("Passed desktop, mobile, shared URL, input, directory/profile and no-JavaScript browser checks.")
 
 
 if __name__ == "__main__":

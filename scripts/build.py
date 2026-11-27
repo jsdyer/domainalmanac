@@ -1,136 +1,85 @@
-#!/usr/bin/env python3
-"""Build a browser tool using Python's standard library; no network required."""
+"""Build the captured market edition without network requests."""
+
 from html import escape
 import json
 from pathlib import Path
 import re
 import shutil
 import tempfile
-from urllib.parse import urlsplit
-
+from records import stat_cells, write_records
 from search_metadata import add_search_metadata
 
 ROOT = Path(__file__).resolve().parents[1]
-SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-
-
-def metadata(root=ROOT):
-    tool = json.loads((root / "tool.json").read_text(encoding="utf-8"))
-    required = {"id", "title", "description", "category", "tags", "icon", "url", "source", "hosting", "access", "data_info"}
-    if not isinstance(tool, dict) or set(tool) != required:
-        raise ValueError("tool.json has missing or unknown fields")
-    for key in required - {"tags", "data_info"}:
-        if not isinstance(tool[key], str) or not tool[key].strip():
-            raise ValueError(f"tool.json: {key} must be a nonempty string")
-    if not SLUG.fullmatch(tool["id"]) or tool["url"] != f'/{tool["id"]}/' or tool["hosting"] != "project":
-        raise ValueError("Use a lowercase tool ID, matching /id/ URL and project hosting")
-    if not isinstance(tool["tags"], list) or not all(isinstance(t, str) and t.strip() for t in tool["tags"]):
-        raise ValueError("tags must be an array of nonempty strings")
-    if tool["access"] != "browser":
-        raise ValueError("This starter produces an immediately usable browser tool; use access: browser")
-    info = tool["data_info"]
-    if (not isinstance(info, dict) or info.get("mode") not in ("snapshot", "live", "local", "reference", "mixed")
-            or not isinstance(info.get("detail"), str) or not info["detail"].strip()):
-        raise ValueError("Describe the tool's inputs for its homepage card in data_info")
-    guide = (root / "README.md").read_text(encoding="utf-8")
-    begin, end = "<!-- coolcode:guide -->", "<!-- /coolcode:guide -->"
-    if guide.count(begin) != 1 or guide.count(end) != 1 or not guide.partition(begin)[2].partition(end)[0].strip() or guide.index(begin) > guide.index(end):
-        raise ValueError("Include a practical README note between the coolcode:guide markers")
-    source = urlsplit(tool["source"])
-    if source.scheme != "https" or not source.hostname or source.username is not None or any(c.isspace() for c in tool["source"]) or "\\" in tool["source"]:
-        raise ValueError("source must be an HTTPS URL without credentials or whitespace")
-    return tool
-
-
-def read_common_pages(root):
-    directory = root / "common-pages"
-    path = directory / "manifest.json"
-    if not path.exists():
-        return []
-    if directory.is_symlink() or path.is_symlink():
-        raise ValueError("Common-use definitions must not be symlinks")
-    entries = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(entries, list):
-        raise ValueError("Expected a list of common-use pages")
-    seen = set()
-    for entry in entries:
-        if not isinstance(entry, dict) or set(entry) != {"slug", "title", "description"}:
-            raise ValueError("Each common-use page needs a slug, title and description")
-        if not all(isinstance(v, str) and v.strip() for v in entry.values()):
-            raise ValueError("Empty or invalid common-use page field")
-        slug = entry["slug"]
-        if not SLUG.fullmatch(slug) or slug in seen:
-            raise ValueError("Common-use slugs must be safe, unique directory names")
-        seen.add(slug)
-    return entries
-
-
-def render_page(page, tool, asset_prefix):
-    page = page.replace("{{ASSET_PREFIX}}", asset_prefix)
-    for token, key in {"TITLE": "title", "DESCRIPTION": "description", "TOOL_ID": "id", "SOURCE_URL": "source"}.items():
-        placeholder = "{{" + token + "}}"
-        if placeholder not in page:
-            raise ValueError(f"Missing template placeholder: {placeholder}")
-        page = page.replace(placeholder, escape(tool[key], quote=True))
-    slug = tool["id"]
-    on_coolcode = (
-        slug != "coolcode-tool-template"
-        and tool["source"].rstrip("/") == f"https://github.com/jsdyer/{slug}"
-    )
-    reporting = {
-        "{{VISIT_COUNTER}}": '<script defer src="/assets/tool-metrics.js" referrerpolicy="no-referrer"></script>',
-        "{{ISSUE_LINK}}": f'<a href="https://coolcode.ca/report/?tool={slug}" referrerpolicy="no-referrer">Report an issue</a>',
-    }
-    for placeholder, markup in reporting.items():
-        if placeholder not in page:
-            raise ValueError(f"Missing template placeholder: {placeholder}")
-        page = page.replace(placeholder, markup if on_coolcode else "")
-    if re.search(r"\{\{[A-Z_]+\}\}", page):
-        raise ValueError("Unresolved template placeholder in web/index.html")
-    return add_search_metadata(page, tool)
 
 
 def build(root=ROOT):
-    tool = metadata(root)
+    edition = json.loads((root / "data/market.json").read_text(encoding="utf-8"))
+    defaults = json.loads((root / "config/market.json").read_text())
+    tool = json.loads((root / "tool.json").read_text())
+    rows = edition["records"]
+    records = {r["extension"]: r for r in rows}
+    if (
+        len(records) != len(rows)
+        or len({r["slug"] for r in rows}) != len(rows)
+        or not all(re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", r["slug"]) for r in rows)
+    ):
+        raise ValueError("Invalid or duplicate extension route")
+    period = defaults["period"]
+    if (
+        len(defaults["defaults"]) != 3
+        or set(defaults["defaults"]) - set(records)
+        or period not in edition["definitions"]
+    ):
+        raise ValueError("Default comparison does not exist in this capture")
+    edition["presets"] = defaults
     output = root / "dist"
-    if output.is_symlink():
-        raise ValueError("dist must not be a symlink")
-    web = root / "web"
-    if web.is_symlink() or any(p.is_symlink() for p in web.rglob("*")):
-        raise ValueError("web/ must not contain symlinks")
-    with tempfile.TemporaryDirectory(prefix="coolcode-tool-") as temporary:
-        stage = Path(temporary) / "site"
-        shutil.copytree(web, stage)
-        index = stage / "index.html"
-        page = index.read_text(encoding="utf-8")
-        common = read_common_pages(root)
-        links = ' · '.join(f'<a href="./{entry["slug"]}/">{escape(entry["title"])}</a>' for entry in common)
-        marker = "<!-- common-use-links -->"
-        if common and marker not in page:
-            raise ValueError("Add the common-use-links marker to the main page")
-        page = page.replace(marker, f'<nav aria-label="Common uses">{links}</nav>' if common else "")
-        index.write_text(render_page(page, tool, "./"), encoding="utf-8")
-        for entry in common:
-            directory = stage / entry["slug"]
-            if directory.exists():
-                raise ValueError(f"Common-use route collides with web content: {entry['slug']}")
-            directory.mkdir()
-            definition = root / "common-pages" / (entry["slug"] + ".html")
-            if definition.is_symlink():
-                raise ValueError("Common-use HTML must not be a symlink")
-            preset = dict(tool, title=entry["title"], description=entry["description"],
-                          url=f'{tool["url"]}{entry["slug"]}/')
-            body = render_page(definition.read_text(encoding="utf-8"), preset, "../")
-            (directory / "index.html").write_text(body, encoding="utf-8")
+    source = root / "web"
+    if output.is_symlink() or source.is_symlink() or any(p.is_symlink() for p in source.rglob("*")):
+        raise ValueError("Unsafe symlink in website paths")
+    with tempfile.TemporaryDirectory(dir=root) as temp:
+        stage = Path(temp) / "site"
+        shutil.copytree(source, stage)
+        (stage / "data").mkdir()
+        (stage / "data/market.json").write_text(
+            json.dumps(edition, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8"
+        )
+        (stage / "data/status.json").write_text(
+            json.dumps({"checked_at": edition["checked_at"], "extensions": len(rows)}) + "\n"
+        )
+        write_records(stage, edition)
+        default_rows = []
+        highest = max(records[e]["periods"][period]["sale_count"] for e in defaults["defaults"])
+        for ext in defaults["defaults"]:
+            r = records[ext]
+            default_rows.append(
+                f'<tr><th scope="row"><a href="./records/{r["slug"]}/">{escape(ext)}</a></th>{stat_cells(r["periods"][period], highest)}</tr>'
+            )
+        replacements = {
+            "TITLE": escape(tool["title"]),
+            "DESCRIPTION": escape(tool["description"], quote=True),
+            "CHECKED_AT": edition["checked_at"],
+            "COUNT": f"{len(rows):,}",
+            "DEFAULT_COMPARISON": "".join(default_rows),
+            "DEFAULT_PERIOD": escape(edition["definitions"][period]),
+            "SOURCE_URL": escape(tool["source"], quote=True),
+            "VISIT_COUNTER": '<script defer src="/assets/tool-metrics.js" referrerpolicy="no-referrer"></script>',
+            "ISSUE_LINK": '<a href="https://coolcode.ca/report/?tool=domainalmanac" referrerpolicy="no-referrer">Report an issue</a>',
+        }
+        template = stage / "index.html"
+        page = template.read_text(encoding="utf-8")
+        for k, v in replacements.items():
+            page = page.replace("{{" + k + "}}", v)
+        if "{{" in page:
+            raise ValueError("Unresolved homepage template marker")
+        template.write_text(
+            add_search_metadata(page, tool, category="FinanceApplication"), encoding="utf-8"
+        )
         (stage / ".nojekyll").touch()
         if output.exists():
             shutil.rmtree(output)
-        shutil.copytree(stage, output)
-    print(f'Built dist/ for {tool["id"]}')
+        stage.rename(output)
+    print(f"Built {len(rows):,} extension records, the directory and the market comparison")
 
 
 if __name__ == "__main__":
-    try:
-        build()
-    except (OSError, ValueError) as exc:
-        raise SystemExit(f"Build failed: {exc}")
+    build()
